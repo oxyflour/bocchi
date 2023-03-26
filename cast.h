@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 
@@ -50,41 +52,47 @@ struct cast_options_t {
     bool verbose = false;
 };
 
+static auto rand_rgb() {
+    return "rgb(" +
+        to_string(rand() % 256) + ", " +
+        to_string(rand() % 256) + ", " +
+        to_string(rand() % 256) + ")";
+}
+
 struct casted_t {
     vector<cast_output_t> jnt;
     vector<int> len;
     vector<double> xs, ys;
-    auto dump(string file) {
+    auto dump(string file, map<int, string> colors = { }) {
         ofstream fn(file);
         if (ends_width(file, ".html")) {
             fn << "<html><body>" << endl;
         }
-        fn << "<svg viewBox=\"" <<
-            xs.front() << " " << ys.front() << " " <<
-            xs.back()  << " " << ys.back()  << "\">" <<
-        endl;
-        auto w = max((ys.back() - ys.front()) / ys.size(), (xs.back() - xs.front()) / xs.size()) * 0.01;
+        auto y0 = ys.front(), x0 = xs.front(), y1 = ys.back(), x1 = xs.back();
+        auto s = 2. / max((y1 - y0) / ys.size(), (x1 - x0) / xs.size());
+        fn << "<svg width=\"" << (x1 - x0) * s << "\" height=\"" << (y1 - y0) * s << "\">" << endl;
         for (int j = 0; j < len.size(); j ++) {
-            fn << "<path fill=\"none\" stroke=\"black\" stroke-width=\"" << w << "\" d=\"";
             for (int b = len[j], e = j < len.size() - 1 ? len[j + 1] : jnt.size(); b + 1 < e; b ++) {
                 auto &t0 = jnt[b], &t1 = jnt[b + 1];
                 if (t0.s == t1.s) {
+                    auto c = colors.count(t0.s) ? colors[t0.s] : (colors[t0.s] = rand_rgb());
+                    fn << "<path fill=\"none\" stroke=\"" << c << "\" stroke-width=\"1\" d=\"";
                     if (j < ys.size()) {
-                        fn << "M " << t0.v << " " << ys[j] << " ";
+                        fn << "M " << t0.v * s - x0 << " " << ys[j] * s - y0 << " ";
                         if (b + 1 < e) {
-                            fn << "H " << t1.v << " ";
+                            fn << "H " << t1.v * s - x0 << " ";
                         }
                     } else {
                         auto i = j - ys.size();
-                        fn << "M " << xs[i] << " " << t0.v << " ";
+                        fn << "M " << xs[i] * s - x0 << " " << t0.v * s - y0 << " ";
                         if (b + 1 < e) {
-                            fn << "V " << t1.v << " ";
+                            fn << "V " << t1.v * s - y0 << " ";
                         }
                     }
+                    fn << "\" />" << endl;
                     b ++;
                 }
             }
-            fn << "\" />" << endl;
         }
         fn << "</svg>" << endl;
         if (ends_width(file, ".html")) {
@@ -124,7 +132,7 @@ casted_t cast(vector<loops_t> &shapes,
     kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, out.ptr);
 
     auto sort_start = clock_now();
-    auto sort_joints = [] __host__ __device__ (cast_output_t a, cast_output_t b) { return a.s < b.s || a.v < b.v; };
+    auto sort_joints = [] __host__ __device__ (cast_output_t a, cast_output_t b) { return a.s != b.s ? a.s < b.s : a.v < b.v; };
     for (int i = 0; i < vec.size(); i ++) {
         auto begin = vec[i],
             end = i < vec.size() - 1 ? vec[i + 1] : num;

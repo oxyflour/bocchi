@@ -8,6 +8,7 @@
 
 using namespace lycoris;
 
+
 auto test_slice() {
     vector<mesh_t> list {
         {
@@ -41,6 +42,7 @@ auto test_slice() {
 auto test_cast() {
     vector<loops_t> shapes = {
         {
+            // shape1
             {
                 { 0, 0 },
                 { 0, 1 },
@@ -53,32 +55,26 @@ auto test_cast() {
                 { .8, .8 },
                 { .2, .2 },
             }
+        }, {
+            // shape2
+            {
+                { .1, .1 },
+                { .1, .9 },
+                { .9, .9 },
+                { .1, .1 },
+            }
         }
     };
     device_vector
-        xs(range(-0.1, 1.1, 0.0002)),
-        ys(range(-0.1, 1.1, 0.0002));
+        xs(range(-0.1, 1.1, 0.002)),
+        ys(range(-0.1, 1.1, 0.002));
     auto casted = cast(shapes, xs, ys, { 1e-6, true });
     casted.dump("build\\test.html");
 
     render_range_t range { 0, 0, casted.xs.size(), casted.ys.size() };
-    auto width = range.i1 - range.i0, height = range.j1 - range.j0;
-    device_vector<render_pixel_t> img(width * height);
     auto render_start = clock_now();
-    render(casted, range, img);
-    printf("PERF: render %zu x %zu in %f s\n", width, height, seconds_since(render_start));
-
-    auto vec = img.to_host();
-    vector<unsigned char> buf(width * height * 4);
-    for (int i = 0; i < width; i ++) {
-        for (int j = 0; j < height; j ++) {
-            auto c = i + j * width;
-            auto p = buf.data() + c * 4;
-            p[0] = p[1] = p[2] = vec[c].s ? 255 : 0;
-            p[3] = 255;
-        }
-    }
-    lodepng::encode("build\\test.png", buf, width, height);
+    dump("build\\test.png", casted, range);
+    printf("PERF: render %zu x %zu in %f s\n", range.width(), range.height(), seconds_since(render_start));
 }
 
 int main() {

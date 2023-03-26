@@ -10,6 +10,15 @@ struct render_pixel_t {
 
 struct render_range_t {
     size_t i0, j0, i1, j1;
+    auto width() {
+        return i1 - i0;
+    }
+    auto height() {
+        return j1 - j0;
+    }
+    auto size() {
+        return (i1 - i0) * (j1 - j0);
+    }
 };
 
 __global__ void kernel_render(
@@ -38,15 +47,39 @@ __global__ void kernel_fill(render_pixel_t *out, int len) {
     }
 }
 
-auto render(casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &out) {
+auto render(casted_t &casted, render_range_t &range, render_pixel_t *ptr) {
     device_vector jnt(casted.jnt);
     device_vector len(casted.len);
     device_vector xs(casted.xs), ys(casted.ys);
-    kernel_fill CU_DIM(256, 64) (out.ptr, out.len);
+    kernel_fill CU_DIM(256, 64) (ptr, range.size());
     kernel_render CU_DIM(dim3(16, 16, 1), dim3(4, 4, 1)) (
         jnt.ptr, jnt.len, len.ptr,
         xs.ptr, xs.len, ys.ptr, ys.len,
-        range, out.ptr);
+        range, ptr);
+}
+
+auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height, map<int, int3> colors = { }) {
+    vector<unsigned char> buf(width * height * 4);
+    for (int i = 0; i < width; i ++) {
+        for (int j = 0; j < height; j ++) {
+            auto k = i + j * width;
+            auto p = buf.data() + k * 4;
+            auto s = vec[k].s;
+            auto c = colors.count(s) ? colors[s] : (colors[s] = { rand() % 256, rand() % 256, rand() % 256 });
+            p[0] = c.x;
+            p[1] = c.y;
+            p[2] = c.z;
+            p[3] = 255;
+        }
+    }
+    lodepng::encode(file, buf, width, height);
+}
+
+auto dump(string file, casted_t &casted, render_range_t &range) {
+    device_vector<render_pixel_t> img(range.size());
+    render(casted, range, img.ptr);
+    auto buf = img.to_host();
+    dump(file, buf, range.width(), range.height());
 }
 
 };
