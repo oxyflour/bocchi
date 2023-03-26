@@ -22,15 +22,14 @@ struct HitGroupData {
     // No data needed
 };
 
-class Trace {
-public:
+struct trace_t {
     OptixDeviceContext ctx;
-    Trace() {
+    trace_t() {
         OPTIX_ASSERT(optixInit());
         OptixDeviceContextOptions opts;
         OPTIX_ASSERT(optixDeviceContextCreate(0, &opts, &ctx));
     }
-    ~Trace() {
+    ~trace_t() {
         OPTIX_ASSERT(optixDeviceContextDestroy(ctx));
     }
 };

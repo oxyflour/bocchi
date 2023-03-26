@@ -60,8 +60,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         device_vector pos(dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs);
         device_vector len(vector<int>(pos.len));
         kernel_slice CU_DIM(256, 64) (verts.ptr,
-            faces.ptr, faces.len,
-            pos.ptr, pos.len,
+            faces.ptr, faces.len, pos.ptr, pos.len,
             dir, opts.tol, len.ptr, NULL);
 
         auto vec = len.to_host();
@@ -75,8 +74,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
 
         device_vector<int> casted(num);
         kernel_slice CU_DIM(256, 64) (verts.ptr,
-            faces.ptr, faces.len,
-            pos.ptr, pos.len,
+            faces.ptr, faces.len, pos.ptr, pos.len,
             dir, opts.tol, len.ptr, casted.ptr);
     }
 }
