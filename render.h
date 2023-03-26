@@ -25,13 +25,14 @@ __global__ void kernel_render(
     cast_output_t *jnt, size_t nj, int *base,
     double *xs, size_t nx, double *ys, size_t ny,
     render_range_t range, render_pixel_t *out) {
+    auto w = range.width();
     for (int j = cuIdx(y) + range.j0; j < range.j1; j += cuDim(y)) {
         for (int i = cuIdx(x) + range.i0; i < range.i1; i += cuDim(x)) {
             for (auto b = base[j], e = j < nx + ny - 1 ? base[j + 1] : (int) nj; b + 1 < e; b ++) {
                 auto &t0 = jnt[b], &t1 = jnt[b + 1];
                 if (t0.s == t1.s) {
                     if (t0.v < xs[i] && xs[i] < t1.v) {
-                        auto &p = out[i + j * (range.i1 - range.i0)];
+                        auto &p = out[i + j * w];
                         p.s = t0.s;
                     }
                     b ++;
@@ -58,6 +59,10 @@ auto render(casted_t &casted, render_range_t &range, render_pixel_t *ptr) {
         range, ptr);
 }
 
+auto rand_int3() {
+    return int3 { rand() % 256, rand() % 256, rand() % 256 };
+}
+
 auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height, map<int, int3> colors = { }) {
     vector<unsigned char> buf(width * height * 4);
     for (int i = 0; i < width; i ++) {
@@ -65,7 +70,7 @@ auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height,
             auto k = i + j * width;
             auto p = buf.data() + k * 4;
             auto s = vec[k].s;
-            auto c = colors.count(s) ? colors[s] : (colors[s] = { rand() % 256, rand() % 256, rand() % 256 });
+            auto c = colors.count(s) ? colors[s] : (colors[s] = rand_int3());
             p[0] = c.x;
             p[1] = c.y;
             p[2] = c.z;
