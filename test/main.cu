@@ -4,10 +4,7 @@
 #include "cast.h"
 #include "render.h"
 
-#include "deps/lodepng/lodepng.h"
-
 using namespace lycoris;
-
 
 auto test_slice() {
     vector<mesh_t> list {

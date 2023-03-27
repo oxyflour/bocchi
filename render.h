@@ -1,5 +1,7 @@
 #pragma once
 
+#include "deps/lodepng/lodepng.h"
+
 #include "cast.h"
 
 namespace lycoris {
@@ -10,13 +12,13 @@ struct render_pixel_t {
 
 struct render_range_t {
     size_t i0, j0, i1, j1;
-    auto width() {
+    __host__ __device__ auto width() {
         return i1 - i0;
     }
-    auto height() {
+    __host__ __device__ auto height() {
         return j1 - j0;
     }
-    auto size() {
+    __host__ __device__ auto size() {
         return (i1 - i0) * (j1 - j0);
     }
 };
@@ -28,12 +30,21 @@ __global__ void kernel_render(
     auto w = range.width();
     for (int j = cuIdx(y) + range.j0; j < range.j1; j += cuDim(y)) {
         for (int i = cuIdx(x) + range.i0; i < range.i1; i += cuDim(x)) {
-            for (auto b = base[j], e = j < nx + ny - 1 ? base[j + 1] : (int) nj; b + 1 < e; b ++) {
+            for (auto b = base[j], e = j + 1 < nx + ny ? base[j + 1] : (int) nj; b + 1 < e; b ++) {
                 auto &t0 = jnt[b], &t1 = jnt[b + 1];
                 if (t0.s == t1.s) {
                     if (t0.v < xs[i] && xs[i] < t1.v) {
-                        auto &p = out[i + j * w];
-                        p.s = t0.s;
+                        out[i + j * w].s = t0.s;
+                    }
+                    b ++;
+                }
+            }
+            int k = ny + i;
+            for (auto b = base[k], e = k + 1 < nx + ny ? base[k + 1] : (int) nj; b + 1 < e; b ++) {
+                auto &t0 = jnt[b], &t1 = jnt[b + 1];
+                if (t0.s == t1.s) {
+                    if (t0.v < ys[j] && ys[j] < t1.v) {
+                        out[i + j * w].s = t0.s;
                     }
                     b ++;
                 }
