@@ -119,10 +119,10 @@ casted_t cast(vector<loops_t> &shapes,
     kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, NULL);
     kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, NULL);
 
-    auto vec = len.to_host();
+    auto vec = from_device(len);
     auto num = accumulate(vec.begin(), vec.end(), 0);
     exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
-    len.from_host(vec);
+    to_device(vec, len);
     if (opts.verbose) {
         printf("INFO: got %d joints for %zu segments at %zu x %zu grids\n", num, inp.len, xs.len, ys.len);
     }
@@ -142,7 +142,7 @@ casted_t cast(vector<loops_t> &shapes,
         printf("PERF: sorted %d joints in %f seconds\n", num, seconds_since(sort_start));
     }
 
-    return casted_t { out.to_host(), vec, xs.to_host(), ys.to_host() };
+    return casted_t { from_device(out), vec, from_device(xs), from_device(ys) };
 }
 
 };

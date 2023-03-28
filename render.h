@@ -94,7 +94,7 @@ auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height,
 auto dump(string file, casted_t &casted, render_range_t &range) {
     device_vector<render_pixel_t> img(range.size());
     render(casted, range, img.ptr);
-    auto buf = img.to_host();
+    auto buf = from_device(img);
     dump(file, buf, range.width(), range.height());
 }
 

@@ -75,7 +75,7 @@ auto test_cast() {
 }
 
 int main() {
-    test_cast();
+    test_slice();
     printf("ok\n");
     return 0;
 }
