@@ -44,8 +44,8 @@ __global__ void kernel_cast(
     }
 }
 
-typedef vector<double2> loop_t;
-typedef vector<loop_t> loops_t;
+typedef vector<double2> poly_t;
+typedef vector<poly_t> polys_t;
 
 struct cast_options_t {
     double tol = 1e-6;
@@ -103,7 +103,7 @@ struct casted_t {
     }
 };
 
-casted_t cast(vector<loops_t> &shapes,
+casted_t cast(vector<polys_t> &shapes,
         device_vector<double> &xs, device_vector<double> &ys, cast_options_t &&opts) {
     vector<cast_input_t> inputs;
     for (int s = 0; s < shapes.size(); s ++) {  auto &loops = shapes[s];

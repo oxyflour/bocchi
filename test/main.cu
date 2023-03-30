@@ -16,7 +16,11 @@ auto test_slice() {
                 { 0., 0., 1. },
             }, {
                 { 0, 1, 2 },
+                { 0, 1, 3 },
+                { 0, 2, 3 },
+                { 1, 2, 3 },
             }
+        /*
         }, {
             {
                 { 0., 0., 0. },
@@ -26,18 +30,19 @@ auto test_slice() {
             }, {
                 { 1, 2, 3 },
             }
+         */
         }
     };
     grid_t grid {
-        { 0, 1, 2 },
-        { 0, 1, 2 },
-        { 0, 1, 2 },
+        { 0.5 },
+        { },
+        { },
     };
     slice(list, grid, { 1e-6, true });
 }
 
 auto test_cast() {
-    vector<loops_t> shapes = {
+    vector<polys_t> shapes = {
         {
             // shape1
             {

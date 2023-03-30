@@ -1,32 +1,78 @@
 #pragma once
 
 #include <numeric>
+#include <map>
 
 #include "utils.h"
 
 namespace lycoris {
 
 struct slice_out_t {
-    int i, j;
+    int i;
     double u, v;
 };
 
-__inline__ __device__ auto check_joint(double x,
-        int i0, double3 p0, int i1, double3 p1,
-        int* num, slice_out_t *out) {
-    if ((p0.x - x) * (x - p1.x) > 0) {
-        auto i = atomicAdd(num, 1);
-        if (out) {
-            auto f = (x - p0.x) / (p1.x - p0.x);
-            auto p = p0 * (1 - f) + p1 * f;
-            out[i] = { i0, i1, p.y, p.z };
+struct slice_conn_t {
+    int i, j;
+    double2 p;
+};
+
+struct conns_t {
+    std::map<int, slice_conn_t> map;
+    auto add(int i, int j, double2 p) {
+        if (map.count(i)) {
+            map[i].j = j;
+        } else {
+            map[i] = { j, -1, p };
         }
+    }
+    auto get() {
+        vector<vector<double2>> polys;
+        while (map.size()) {
+            vector<double2> poly;
+            auto begin = map.begin();
+            auto i = begin->first;
+            while (map.count(i)) {
+                auto &m = map[i];
+                poly.push_back(m.p);
+                map.erase(i);
+                if (m.i != -1) {
+                    i = m.i;
+                    m.i = -1;
+                } else {
+                    i = m.j;
+                    m.j = -1;
+                }
+            }
+            polys.push_back(poly);
+        }
+    }
+};
+
+__inline__ __device__ auto check_joint(double x,
+        int i, double3 p0, double3 p1,
+        slice_out_t *&out) {
+    if ((p0.x - x) * (x - p1.x) > 0) {
+        auto f = (x - p0.x) / (p1.x - p0.x);
+        auto p = p0 * (1 - f) + p1 * f;
+        //*out = { i, p.y, p.z };
+        //out ++;
     }
 }
 __inline__ __device__ auto reorder_xyz(double3 p, int dir) {
     return dir == 0 ? p :
            dir == 1 ? double3 { p.y, p.z, p.x } :
                       double3 { p.z, p.x, p.y };
+}
+__inline__ __device__ auto index_of(int a, int b, size_t n) {
+    return min(a, b) + max(a, b) * (int) n;
+}
+__inline__ __device__ auto index_of(int3 f, size_t n) {
+    return int3 {
+        index_of(f.x, f.y, n),
+        index_of(f.y, f.z, n),
+        index_of(f.z, f.x, n),
+    };
 }
 __global__ void kernel_slice(
         double3 *verts, size_t vertNum,
@@ -44,15 +90,16 @@ __global__ void kernel_slice(
         for (int j = 0; j < posNum; j ++) {
             auto v = pos[j] + tol / 2.;
             if (m.x < v && v < m.y) {
+                auto n = atomicAdd(num + j, 2);
                 if (out) {
+                    auto ptr = out + n;
+                    auto idx = index_of(f, vertNum);
                     auto px = reorder_xyz(a, dir),
                          py = reorder_xyz(b, dir),
                          pz = reorder_xyz(c, dir);
-                    //check_joint(v, f.x, px, f.y, py, num, out);
-                    //check_joint(v, f.y, py, f.z, pz, num, out);
-                    //check_joint(v, f.z, pz, f.x, px, num, out);
-                } else {
-                    atomicAdd(num + j, 2);
+                    check_joint(v, idx.x, px, py, ptr);
+                    check_joint(v, idx.y, py, pz, ptr);
+                    check_joint(v, idx.z, pz, px, ptr);
                 }
             }
         }
@@ -84,6 +131,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         kernel_slice CU_DIM(256, 64) (
             verts.ptr, verts.len, faces.ptr, faces.len, pos.ptr, pos.len,
             dir, opts.tol, len.ptr, NULL);
+        CUDA_ASSERT(cudaGetLastError());
 
         auto vec = from_device(len);
         auto num = accumulate(vec.begin(), vec.end(), 0);
@@ -98,6 +146,18 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         kernel_slice CU_DIM(256, 64) (
             verts.ptr, verts.len, faces.ptr, faces.len, pos.ptr, pos.len,
             dir, opts.tol, len.ptr, casted.ptr);
+        CUDA_ASSERT(cudaGetLastError());
+
+        auto out = from_device(casted);
+        conns_t conns;
+        for (int i = 0; i < vec.size(); i ++) {
+            for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
+                auto &p = out[b], &q = out[b + 1];
+                conns.add(p.i, q.i, { p.u, p.v });
+                conns.add(q.i, p.i, { q.u, q.v });
+            }
+        }
+        conns.get();
     }
 }
 
