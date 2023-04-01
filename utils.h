@@ -24,7 +24,7 @@ __device__ __host__ inline auto operator*(double3 a, double b) {
     return double3 { a.x * b, a.y * b, a.z * b };
 }
 __device__ __host__ inline auto operator+(double3 a, double3 b) {
-    return double3 { a.x * b.x, a.y * b.y, a.z * b.z };
+    return double3 { a.x + b.x, a.y + b.y, a.z + b.z };
 }
 
 __device__ __host__ inline auto floor(double3 v) {
@@ -92,7 +92,7 @@ auto _cuda_assert(cudaError_t err, const char* file, int line) {
 
 template <typename T>
 auto _malloc_device(size_t size, int retry, const char* file, int line) {
-    T *ptr = nullptr;
+    T *ptr = NULL;
     cudaError_t err;
     while (retry > 0) {
         cudaMalloc(&ptr, size * sizeof(T));
@@ -114,7 +114,7 @@ auto _malloc_device(size_t size, const char* file, int line) {
 
 template <typename T>
 auto _to_device(T *ptr, size_t size, T *out, const char *file, int line) {
-    if (out == nullptr) {
+    if (out == NULL) {
         out = malloc_device(T, size, 10);
     }
     if (size) {
@@ -124,13 +124,12 @@ auto _to_device(T *ptr, size_t size, T *out, const char *file, int line) {
 }
 template <typename T>
 auto _to_device(T *ptr, size_t size, const char *file, int line) {
-    return _to_device(ptr, size, (T *) nullptr, file, line);
+    return _to_device(ptr, size, (T *) NULL, file, line);
 }
-#define to_device(...) _to_device(##__VA_ARGS__, __FILE__, __LINE__)
 
 template <typename T>
 auto _from_device(T *ptr, size_t size, T *out, const char *file, int line) {
-    if (out == nullptr) {
+    if (out == NULL) {
         out = (T *) malloc(size * sizeof(T));
     }
     if (size) {
@@ -140,9 +139,8 @@ auto _from_device(T *ptr, size_t size, T *out, const char *file, int line) {
 }
 template <typename T>
 auto _from_device(T *ptr, size_t size, const char *file, int line) {
-    return _from_device(ptr, size, nullptr, file, line);
+    return _from_device(ptr, size, NULL, file, line);
 }
-#define from_device(...) _from_device(##__VA_ARGS__, __FILE__, __LINE__)
 
 using std::vector;
 using std::string;
@@ -177,15 +175,15 @@ bool ends_width(string_view str, string_view suffix) {
 
 template <typename T>
 struct device_vector {
-    T *ptr = nullptr;
+    T *ptr = NULL;
     size_t len = 0;
     device_vector(vector<T> &vec) {
         resize(vec.size());
-        to_device(vec.data(), vec.size(), ptr);
+        _to_device(vec.data(), vec.size(), ptr, __FILE__, __LINE__);
     }
     device_vector(vector<T> &&vec) {
         resize(vec.size());
-        to_device(vec.data(), vec.size(), ptr);
+        _to_device(vec.data(), vec.size(), ptr, __FILE__, __LINE__);
     }
     device_vector(size_t len) : len(len) {
         ptr = _malloc_device<T>(len, __FILE__, __LINE__);
@@ -195,7 +193,7 @@ struct device_vector {
     }
     auto resize(size_t size) {
         if (len != size) {
-            if (ptr != nullptr) {
+            if (ptr != NULL) {
                 _cuda_assert(cudaFree(ptr), __FILE__, __LINE__);
             }
             ptr = malloc_device(T, size);
@@ -208,17 +206,26 @@ private:
 };
 
 template <typename T>
-auto _from_device(device_vector<T> &vec, const char *file, int line) {
-    vector<T> out(vec.len);
+auto &_from_device(device_vector<T> &vec, vector<T> &out, const char *file, int line) {
+    out.resize(vec.len);
     _from_device(vec.ptr, vec.len, out.data(), file, line);
     return out;
 }
+template <typename T>
+auto _from_device(device_vector<T> &vec, const char *file, int line) {
+    vector<T> out;
+    _from_device(vec, out, file, line);
+    return out;
+}
+#define from_device(...) _from_device(##__VA_ARGS__, __FILE__, __LINE__)
+
 template <typename T>
 auto &_to_device(vector<T> &vec, device_vector<T> &out, const char *file, int line) {
     out.resize(vec.size());
     _to_device(vec.data(), vec.size(), out.ptr, file, line);
     return out;
 }
+#define to_device(...) _to_device(##__VA_ARGS__, __FILE__, __LINE__)
 
 struct grid_t {
     vector<double> xs, ys, zs;

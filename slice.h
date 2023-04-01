@@ -17,47 +17,41 @@ struct slice_conn_t {
     double2 p;
 };
 
+struct slice_polys_t {
+    vector<vector<vector<double2>>> x, y, z;
+};
+
 struct conns_t {
     std::map<int, slice_conn_t> map;
     auto add(int i, int j, double2 p) {
-        if (map.count(i)) {
-            map[i].j = j;
+        if (!map.count(i)) {
+            map[i] = { -1, j, p };
         } else {
-            map[i] = { j, -1, p };
+            map[i].i = j;
         }
     }
     auto get() {
         vector<vector<double2>> polys;
         while (map.size()) {
             vector<double2> poly;
-            auto begin = map.begin();
-            auto i = begin->first;
+            auto i = map.begin()->first;
             while (map.count(i)) {
                 auto &m = map[i];
                 poly.push_back(m.p);
+                auto k = map.count(m.i) ? m.i : m.j;
                 map.erase(i);
-                if (m.i != -1) {
-                    i = m.i;
-                    m.i = -1;
-                } else {
-                    i = m.j;
-                    m.j = -1;
-                }
+                i = k;
             }
             polys.push_back(poly);
         }
+        return polys;
     }
 };
 
-__inline__ __device__ auto check_joint(double x,
-        int i, double3 p0, double3 p1,
-        slice_out_t *&out) {
-    if ((p0.x - x) * (x - p1.x) > 0) {
-        auto f = (x - p0.x) / (p1.x - p0.x);
-        auto p = p0 * (1 - f) + p1 * f;
-        //*out = { i, p.y, p.z };
-        //out ++;
-    }
+__inline__ __device__ auto add_joint(double x, int i, double3 p0, double3 p1) {
+    auto f = (x - p0.x) / (p1.x - p0.x);
+    auto p = p0 * (1 - f) + p1 * f;
+    return slice_out_t { i, p.y, p.z };
 }
 __inline__ __device__ auto reorder_xyz(double3 p, int dir) {
     return dir == 0 ? p :
@@ -66,13 +60,6 @@ __inline__ __device__ auto reorder_xyz(double3 p, int dir) {
 }
 __inline__ __device__ auto index_of(int a, int b, size_t n) {
     return min(a, b) + max(a, b) * (int) n;
-}
-__inline__ __device__ auto index_of(int3 f, size_t n) {
-    return int3 {
-        index_of(f.x, f.y, n),
-        index_of(f.y, f.z, n),
-        index_of(f.z, f.x, n),
-    };
 }
 __global__ void kernel_slice(
         double3 *verts, size_t vertNum,
@@ -92,14 +79,22 @@ __global__ void kernel_slice(
             if (m.x < v && v < m.y) {
                 auto n = atomicAdd(num + j, 2);
                 if (out) {
-                    auto ptr = out + n;
-                    auto idx = index_of(f, vertNum);
+                    auto ix = index_of(f.y, f.z, vertNum),
+                         iy = index_of(f.z, f.x, vertNum),
+                         iz = index_of(f.x, f.y, vertNum);
                     auto px = reorder_xyz(a, dir),
                          py = reorder_xyz(b, dir),
                          pz = reorder_xyz(c, dir);
-                    check_joint(v, idx.x, px, py, ptr);
-                    check_joint(v, idx.y, py, pz, ptr);
-                    check_joint(v, idx.z, pz, px, ptr);
+                    if ((px.x - v) * (v - py.x) <= 0) {
+                        out[n ++] = add_joint(v, ix, py, pz);
+                        out[n ++] = add_joint(v, iy, pz, px);
+                    } else if ((py.x - v) * (v - pz.x) <= 0) {
+                        out[n ++] = add_joint(v, iy, pz, px);
+                        out[n ++] = add_joint(v, iz, px, py);
+                    } else {
+                        out[n ++] = add_joint(v, iz, px, py);
+                        out[n ++] = add_joint(v, ix, py, pz);
+                    }
                 }
             }
         }
@@ -125,6 +120,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
     device_vector verts(merged.verts);
     device_vector faces(merged.faces);
 
+    slice_polys_t ret;
     for (int dir = 0; dir < 3; dir ++) {
         device_vector pos(dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs);
         device_vector len(vector<int>(pos.len));
@@ -148,17 +144,19 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
             dir, opts.tol, len.ptr, casted.ptr);
         CUDA_ASSERT(cudaGetLastError());
 
+        auto &ref = dir == 0 ? ret.x : dir == 1 ? ret.y : ret.z;
         auto out = from_device(casted);
-        conns_t conns;
         for (int i = 0; i < vec.size(); i ++) {
+            conns_t conns;
             for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
                 auto &p = out[b], &q = out[b + 1];
                 conns.add(p.i, q.i, { p.u, p.v });
                 conns.add(q.i, p.i, { q.u, q.v });
             }
+            ref.push_back(conns.get());
         }
-        conns.get();
     }
+    return ret;
 }
 
 };
