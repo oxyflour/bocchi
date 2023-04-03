@@ -227,6 +227,9 @@ auto &_to_device(vector<T> &vec, device_vector<T> &out, const char *file, int li
 }
 #define to_device(...) _to_device(##__VA_ARGS__, __FILE__, __LINE__)
 
+typedef vector<double2> poly_t;
+typedef vector<poly_t> polys_t;
+
 struct grid_t {
     vector<double> xs, ys, zs;
     static auto load(ifstream &fn, vector<double> &arr) {

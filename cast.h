@@ -44,9 +44,6 @@ __global__ void kernel_cast(
     }
 }
 
-typedef vector<double2> poly_t;
-typedef vector<poly_t> polys_t;
-
 struct cast_options_t {
     double tol = 1e-6;
     bool verbose = false;

@@ -9,7 +9,7 @@ namespace lycoris {
 
 struct slice_out_t {
     int i;
-    double u, v;
+    double2 p;
 };
 
 struct slice_conn_t {
@@ -18,29 +18,46 @@ struct slice_conn_t {
 };
 
 struct slice_polys_t {
-    vector<vector<vector<double2>>> x, y, z;
+    vector<polys_t> x, y, z;
 };
 
-struct conns_t {
-    std::map<int, slice_conn_t> map;
-    auto add(int i, int j, double2 p) {
-        if (!map.count(i)) {
-            map[i] = { -1, j, p };
+struct loops_builder_t {
+    std::map<int, slice_conn_t> conns;
+    inline auto add(int i, int j, double2 p) {
+        if (!conns.count(i)) {
+            conns[i] = { j, -1, p };
         } else {
-            map[i].i = j;
+            conns[i].j = j;
         }
     }
+    inline auto add(slice_out_t &u, slice_out_t &v) {
+        add(u.i, v.i, u.p);
+        add(v.i, u.i, v.p);
+    }
     auto get() {
-        vector<vector<double2>> polys;
-        while (map.size()) {
-            vector<double2> poly;
-            auto i = map.begin()->first;
-            while (map.count(i)) {
-                auto &m = map[i];
-                poly.push_back(m.p);
-                auto k = map.count(m.i) ? m.i : m.j;
-                map.erase(i);
-                i = k;
+        polys_t polys;
+        while (conns.size()) {
+            poly_t poly;
+
+            auto begin = conns.begin();
+            auto idx = begin->first;
+            auto conn = begin->second;
+            while (conns.count(idx)) {
+                auto conn = conns[idx];
+                conns.erase(idx);
+                poly.push_back(conn.p);
+                idx = conns.count(conn.i) ? conn.i : conn.j;
+            }
+            if (idx < 0) {
+                idx = conns.count(conn.i) ? conn.i : conn.j;
+            } else {
+                poly.push_back(poly.front());
+            }
+            while (conns.count(idx)) {
+                auto conn = conns[idx];
+                conns.erase(idx);
+                poly.insert(poly.begin(), conn.p);
+                idx = conns.count(conn.i) ? conn.i : conn.j;
             }
             polys.push_back(poly);
         }
@@ -51,7 +68,7 @@ struct conns_t {
 __inline__ __device__ auto add_joint(double x, int i, double3 p0, double3 p1) {
     auto f = (x - p0.x) / (p1.x - p0.x);
     auto p = p0 * (1 - f) + p1 * f;
-    return slice_out_t { i, p.y, p.z };
+    return slice_out_t { i, { p.y, p.z } };
 }
 __inline__ __device__ auto reorder_xyz(double3 p, int dir) {
     return dir == 0 ? p :
@@ -147,13 +164,11 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         auto &ref = dir == 0 ? ret.x : dir == 1 ? ret.y : ret.z;
         auto out = from_device(casted);
         for (int i = 0; i < vec.size(); i ++) {
-            conns_t conns;
+            loops_builder_t builder;
             for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
-                auto &p = out[b], &q = out[b + 1];
-                conns.add(p.i, q.i, { p.u, p.v });
-                conns.add(q.i, p.i, { q.u, q.v });
+                builder.add(out[b], out[b + 1]);
             }
-            ref.push_back(conns.get());
+            ref.push_back(builder.get());
         }
     }
     return ret;
