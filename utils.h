@@ -12,7 +12,7 @@
 #include <optix_stubs.h>
 #include <optix_function_table_definition.h>
 
-namespace lycoris {
+namespace bocchi {
 
 __device__ __host__ inline auto operator+(int3 a, int b) {
     return int3 { a.x + b, a.y + b, a.z + b };
@@ -228,7 +228,7 @@ auto &_to_device(vector<T> &vec, device_vector<T> &out, const char *file, int li
 #define to_device(...) _to_device(##__VA_ARGS__, __FILE__, __LINE__)
 
 typedef vector<double2> poly_t;
-typedef vector<poly_t> polys_t;
+typedef vector<poly_t> shape_t;
 
 struct grid_t {
     vector<double> xs, ys, zs;

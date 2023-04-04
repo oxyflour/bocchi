@@ -7,11 +7,11 @@
 
 #include "utils.h"
 
-namespace lycoris {
+namespace bocchi {
 using namespace std;
 
 struct cast_input_t {
-    int s, l;
+    int s, p;
     double x, y;
 };
 
@@ -27,7 +27,7 @@ __global__ void kernel_cast(
         int *len, cast_output_t *out) {
     for (int i = cuIdx(x); i < inputNum - 1; i += cuDim(x)) {
         auto &a = inputs[i], &b = inputs[i + 1];
-        if (a.s == b.s && a.l == b.l) {
+        if (a.s == b.s && a.p == b.p) {
             auto p0 = dir == 0 ? double2 { a.x, a.y } : double2 { a.y, a.x },
                  p1 = dir == 0 ? double2 { b.x, b.y } : double2 { b.y, b.x };
             for (int j = 0; j < posNum; j ++) {
@@ -60,53 +60,15 @@ struct casted_t {
     vector<cast_output_t> jnt;
     vector<int> len;
     vector<double> xs, ys;
-    auto dump(string file, map<int, string> colors = { }) {
-        ofstream fn(file);
-        if (ends_width(file, ".html")) {
-            fn << "<html><body>" << endl;
-        }
-        auto y0 = ys.front(), x0 = xs.front(), y1 = ys.back(), x1 = xs.back();
-        auto s = 2. / max((y1 - y0) / ys.size(), (x1 - x0) / xs.size());
-        fn << "<svg width=\"" << (x1 - x0) * s << "\" height=\"" << (y1 - y0) * s << "\">" << endl;
-        for (int j = 0; j < len.size(); j ++) {
-            for (int b = len[j], e = j < len.size() - 1 ? len[j + 1] : jnt.size(); b + 1 < e; b ++) {
-                auto &t0 = jnt[b], &t1 = jnt[b + 1];
-                if (t0.s == t1.s) {
-                    auto c = colors.count(t0.s) ? colors[t0.s] : (colors[t0.s] = rand_rgb());
-                    fn << "<path fill=\"none\" stroke=\"" << c << "\" stroke-width=\"1\" d=\"";
-                    if (j < ys.size()) {
-                        fn << "M " << t0.v * s - x0 << " " << ys[j] * s - y0 << " ";
-                        if (b + 1 < e) {
-                            fn << "H " << t1.v * s - x0 << " ";
-                        }
-                    } else {
-                        auto i = j - ys.size();
-                        fn << "M " << xs[i] * s - x0 << " " << t0.v * s - y0 << " ";
-                        if (b + 1 < e) {
-                            fn << "V " << t1.v * s - y0 << " ";
-                        }
-                    }
-                    fn << "\" />" << endl;
-                    b ++;
-                }
-            }
-        }
-        fn << "</svg>" << endl;
-        if (ends_width(file, ".html")) {
-            fn << "</body></html>" << endl;
-        }
-    }
-    auto dump(ofstream &fn) {
-    }
 };
 
-casted_t cast(vector<polys_t> &shapes,
+casted_t cast(vector<shape_t> &shapes,
         device_vector<double> &xs, device_vector<double> &ys, cast_options_t &&opts) {
     vector<cast_input_t> inputs;
-    for (int s = 0; s < shapes.size(); s ++) {  auto &loops = shapes[s];
-        for (int l = 0; l < loops.size(); l ++) { auto &loop = loops[l];
-            for (int i = 0; i < loop.size(); i ++) { auto &pt = loop[i];
-                inputs.push_back({ s, l, pt.x, pt.y });
+    for (int s = 0; s < shapes.size(); s ++) {  auto &shape = shapes[s];
+        for (int p = 0; p < shape.size(); p ++) { auto &poly = shape[p];
+            for (int i = 0; i < poly.size(); i ++) { auto &pt = poly[i];
+                inputs.push_back({ s, p, pt.x, pt.y });
             }
         }
     }
@@ -140,6 +102,43 @@ casted_t cast(vector<polys_t> &shapes,
     }
 
     return casted_t { from_device(out), vec, from_device(xs), from_device(ys) };
+}
+
+auto dump_svg(string file, casted_t &casted, map<int, string> colors = { }) {
+    ofstream fn(file);
+    if (ends_width(file, ".html")) {
+        fn << "<html><body>" << endl;
+    }
+    auto y0 = casted.ys.front(), x0 = casted.xs.front(), y1 = casted.ys.back(), x1 = casted.xs.back();
+    auto s = 2. / max((y1 - y0) / casted.ys.size(), (x1 - x0) / casted.xs.size());
+    fn << "<svg width=\"" << (x1 - x0) * s << "\" height=\"" << (y1 - y0) * s << "\">" << endl;
+    for (int j = 0; j < casted.len.size(); j ++) {
+        for (int b = casted.len[j], e = j < casted.len.size() - 1 ? casted.len[j + 1] : casted.jnt.size(); b + 1 < e; b ++) {
+            auto &t0 = casted.jnt[b], &t1 = casted.jnt[b + 1];
+            if (t0.s == t1.s) {
+                auto c = colors.count(t0.s) ? colors[t0.s] : (colors[t0.s] = rand_rgb());
+                fn << "<path fill=\"none\" stroke=\"" << c << "\" stroke-width=\"1\" d=\"";
+                if (j < casted.ys.size()) {
+                    fn << "M " << t0.v * s - x0 << " " << casted.ys[j] * s - y0 << " ";
+                    if (b + 1 < e) {
+                        fn << "H " << t1.v * s - x0 << " ";
+                    }
+                } else {
+                    auto i = j - casted.ys.size();
+                    fn << "M " << casted.xs[i] * s - x0 << " " << t0.v * s - y0 << " ";
+                    if (b + 1 < e) {
+                        fn << "V " << t1.v * s - y0 << " ";
+                    }
+                }
+                fn << "\" />" << endl;
+                b ++;
+            }
+        }
+    }
+    fn << "</svg>" << endl;
+    if (ends_width(file, ".html")) {
+        fn << "</body></html>" << endl;
+    }
 }
 
 };

@@ -4,7 +4,7 @@
 
 #include "cast.h"
 
-namespace lycoris {
+namespace bocchi {
 
 struct render_pixel_t {
     int s;
@@ -74,7 +74,7 @@ auto rand_int3() {
     return int3 { rand() % 256, rand() % 256, rand() % 256 };
 }
 
-auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height, map<int, int3> colors = { }) {
+auto dump_png(string file, vector<render_pixel_t> &vec, size_t width, size_t height, map<int, int3> colors = { }) {
     vector<unsigned char> buf(width * height * 4);
     for (int i = 0; i < width; i ++) {
         for (int j = 0; j < height; j ++) {
@@ -91,11 +91,20 @@ auto dump(string file, vector<render_pixel_t> &vec, size_t width, size_t height,
     lodepng::encode(file, buf, width, height);
 }
 
-auto dump(string file, casted_t &casted, render_range_t &range) {
+auto dump_png(string file, casted_t &casted, render_range_t &range) {
     device_vector<render_pixel_t> img(range.size());
     render(casted, range, img.ptr);
     auto buf = from_device(img);
-    dump(file, buf, range.width(), range.height());
+    dump_png(file, buf, range.width(), range.height());
+}
+
+auto dump(string file, casted_t &casted) {
+    if (ends_width(file, ".png")) {
+        render_range_t range { 0, 0, casted.xs.size(), casted.ys.size() };
+        dump_png(file, casted, range);
+    } else {
+        dump_svg(file, casted);
+    }
 }
 
 };

@@ -5,7 +5,7 @@
 
 #include "utils.h"
 
-namespace lycoris {
+namespace bocchi {
 
 struct slice_out_t {
     int i;
@@ -17,11 +17,16 @@ struct slice_conn_t {
     double2 p;
 };
 
-struct slice_polys_t {
-    vector<polys_t> x, y, z;
+struct slice_poly_t {
+    poly_t p;
+    int s;
 };
 
-struct loops_builder_t {
+struct slice_shape_t {
+    vector<vector<shape_t>> x, y, z;
+};
+
+struct poly_builder_t {
     std::map<int, slice_conn_t> conns;
     inline auto add(int i, int j, double2 p) {
         if (!conns.count(i)) {
@@ -35,10 +40,9 @@ struct loops_builder_t {
         add(v.i, u.i, v.p);
     }
     auto get() {
-        polys_t polys;
+        vector<slice_poly_t> polys;
         while (conns.size()) {
             poly_t poly;
-
             auto begin = conns.begin();
             auto idx = begin->first;
             auto conn = begin->second;
@@ -59,7 +63,7 @@ struct loops_builder_t {
                 poly.insert(poly.begin(), conn.p);
                 idx = conns.count(conn.i) ? conn.i : conn.j;
             }
-            polys.push_back(poly);
+            polys.push_back({ poly, max(conn.i, conn.j) });
         }
         return polys;
     }
@@ -125,19 +129,22 @@ struct slice_options_t {
 
 auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
     mesh_t merged;
-    for (auto &mesh : list) {
+    vector<int> faceIdToMeshId;
+    for (int s = 0; s < list.size(); s ++) {
+        auto &mesh = list[s];
         auto start = merged.verts.size();
         for (auto vert : mesh.verts) {
             merged.verts.push_back(round_by(vert, opts.tol));
         }
         for (auto face : mesh.faces) {
             merged.faces.push_back(face + start);
+            faceIdToMeshId.push_back(s);
         }
     }
     device_vector verts(merged.verts);
     device_vector faces(merged.faces);
 
-    slice_polys_t ret;
+    slice_shape_t ret;
     for (int dir = 0; dir < 3; dir ++) {
         device_vector pos(dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs);
         device_vector len(vector<int>(pos.len));
@@ -151,7 +158,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
         to_device(vec, len);
         if (opts.verbose) {
-            printf("got %d joints for %zu verts and %zu faces at dir %s\n",
+            printf("INFO: got %d joints for %zu verts and %zu faces at dir %s\n",
                 num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z");
         }
 
@@ -164,11 +171,17 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         auto &ref = dir == 0 ? ret.x : dir == 1 ? ret.y : ret.z;
         auto out = from_device(casted);
         for (int i = 0; i < vec.size(); i ++) {
-            loops_builder_t builder;
+            ref.push_back({ });
+            auto &shapes = ref.back();
+            shapes.resize(list.size());
+            poly_builder_t builder;
             for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
                 builder.add(out[b], out[b + 1]);
             }
-            ref.push_back(builder.get());
+            for (auto &item : builder.get()) {
+                auto s = faceIdToMeshId[item.s % verts.len];
+                shapes[s].push_back(item.p);
+            }
         }
     }
     return ret;

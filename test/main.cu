@@ -4,7 +4,7 @@
 #include "cast.h"
 #include "render.h"
 
-using namespace lycoris;
+using namespace bocchi;
 
 auto test_slice() {
     vector<mesh_t> list {
@@ -20,6 +20,7 @@ auto test_slice() {
                 { 0, 2, 3 },
                 { 1, 2, 3 },
             }
+            /*
         }, {
             {
                 { 0., 0., 0. },
@@ -30,6 +31,7 @@ auto test_slice() {
                 { 0, 1, 2 },
                 { 1, 2, 3 },
             }
+             */
         }
     };
     grid_t grid {
@@ -37,11 +39,16 @@ auto test_slice() {
         { },
         { },
     };
-    slice(list, grid, { 1e-6, true });
+    auto ret = slice(list, grid, { 1e-6, true });
+    device_vector
+        xs(range(-0.1, 1.1, 0.002)),
+        ys(range(-0.1, 1.1, 0.002));
+    auto casted = cast(ret.x[0], xs, ys, { 1e-6, true });
+    dump("build\\test.png", casted);
 }
 
 auto test_cast() {
-    vector<polys_t> shapes = {
+    vector<shape_t> shapes = {
         {
             // shape1
             {
@@ -70,12 +77,11 @@ auto test_cast() {
         xs(range(-0.1, 1.1, 0.002)),
         ys(range(-0.1, 1.1, 0.002));
     auto casted = cast(shapes, xs, ys, { 1e-6, true });
-    casted.dump("build\\test.html");
+    dump("build\\test.html", casted);
 
-    render_range_t range { 0, 0, casted.xs.size(), casted.ys.size() };
     auto render_start = clock_now();
-    dump("build\\test.png", casted, range);
-    printf("PERF: render %zu x %zu in %f s\n", range.width(), range.height(), seconds_since(render_start));
+    dump("build\\test.png", casted);
+    printf("PERF: render %zu x %zu in %f s\n", casted.xs.size(), casted.ys.size(), seconds_since(render_start));
 }
 
 int main() {

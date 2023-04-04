@@ -2,7 +2,7 @@
 
 #include "utils.h"
 
-namespace lycoris {
+namespace bocchi {
 
 struct Params {
     uchar4*                image;
