@@ -36,10 +36,11 @@ auto test_slice() {
         vector<render_pixel_t> buf(range.size());
         for (int i = 0; i < s.size(); i ++) {
             auto casted = cast(s[i], u, v, move(opts));
-            if (0) {
-                render(casted, range, pixels.ptr);
-            } else if (casted.jnt.size()) {
+            // DEBUG
+            if (casted.jnt.size()) {
                 dump_png("build\\slice-" + string(a) + to_string(i) + ".png", casted, range, pixels, buf);
+            } else {
+                render(casted, range, pixels.ptr);
             }
         }
         printf("PERF: render dir %s (%zu x %zu) in %f s\n", a, u.len, v.len, seconds_since(render_start));
