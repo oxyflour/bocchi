@@ -26,9 +26,24 @@ __device__ __host__ inline auto operator*(double3 a, double b) {
 __device__ __host__ inline auto operator+(double3 a, double3 b) {
     return double3 { a.x + b.x, a.y + b.y, a.z + b.z };
 }
+__device__ __host__ inline auto operator/(double2 a, double b) {
+    return double2 { a.x / b, a.y / b };
+}
+__device__ __host__ inline auto operator*(double2 a, double b) {
+    return double2 { a.x * b, a.y * b };
+}
+__device__ __host__ inline auto operator-(double2 a, double2 b) {
+    return double2 { a.x - b.x, a.y - b.y };
+}
+__device__ __host__ inline auto length(double2 a) {
+    return sqrt(a.x * a.x + a.y * a.y);
+}
 
 __device__ __host__ inline auto floor(double3 v) {
     return double3 { ::floor(v.x), ::floor(v.y), ::floor(v.z) };
+}
+__device__ __host__ inline auto floor(double2 v) {
+    return double2 { ::floor(v.x), ::floor(v.y) };
 }
 template <typename T>
 __device__ __host__ inline auto round_by(T val, double tol) {

@@ -8,18 +8,18 @@
 namespace bocchi {
 
 struct slice_out_t {
-    int i;
+    size_t i;
     double2 p;
 };
 
 struct slice_conn_t {
-    int i, j;
+    size_t i, j;
     double2 p;
 };
 
 struct slice_poly_t {
     poly_t p;
-    int s;
+    size_t s;
 };
 
 struct slice_shape_t {
@@ -27,10 +27,10 @@ struct slice_shape_t {
 };
 
 struct poly_builder_t {
-    std::map<int, slice_conn_t> conns;
-    inline auto add(int i, int j, double2 p) {
+    std::map<size_t, slice_conn_t> conns;
+    inline auto add(size_t i, size_t j, double2 p) {
         if (!conns.count(i)) {
-            conns[i] = { j, -1, p };
+            conns[i] = { j, 0xffffffff, p };
         } else {
             conns[i].j = j;
         }
@@ -52,7 +52,7 @@ struct poly_builder_t {
                 poly.push_back(conn.p);
                 idx = conns.count(conn.i) ? conn.i : conn.j;
             }
-            if (idx < 0) {
+            if (idx == 0xffffffff) {
                 idx = conns.count(conn.i) ? conn.i : conn.j;
             } else {
                 poly.push_back(poly.front());
@@ -69,7 +69,7 @@ struct poly_builder_t {
     }
 };
 
-__inline__ __device__ auto add_joint(double x, int i, double3 p0, double3 p1) {
+__inline__ __device__ auto add_joint(double x, size_t i, double3 p0, double3 p1) {
     auto f = (x - p0.x) / (p1.x - p0.x);
     auto p = p0 * (1 - f) + p1 * f;
     return slice_out_t { i, { p.y, p.z } };
@@ -80,7 +80,7 @@ __inline__ __device__ auto reorder_xyz(double3 p, int dir) {
                       double3 { p.z, p.x, p.y };
 }
 __inline__ __device__ auto index_of(int a, int b, size_t n) {
-    return min(a, b) + max(a, b) * (int) n;
+    return max(a, b) + min(a, b) * n;
 }
 __global__ void kernel_slice(
         double3 *verts, size_t vertNum,
@@ -124,12 +124,14 @@ __global__ void kernel_slice(
 
 struct slice_options_t {
     double tol = 1e-6;
+    double gap = 1e-3;
     bool verbose = false;
 };
 
 auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
+    auto merge_start = clock_now();
     mesh_t merged;
-    vector<int> faceIdToMeshId;
+    vector<int> face_to_mesh;
     for (int s = 0; s < list.size(); s ++) {
         auto &mesh = list[s];
         auto start = merged.verts.size();
@@ -138,11 +140,15 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         }
         for (auto face : mesh.faces) {
             merged.faces.push_back(face + start);
-            faceIdToMeshId.push_back(s);
+            face_to_mesh.push_back(s);
         }
     }
     device_vector verts(merged.verts);
     device_vector faces(merged.faces);
+    if (opts.verbose) {
+        printf("PERF: merged %zu verts and %zu faces in %f s\n",
+            verts.len, faces.len, seconds_since(merge_start));
+    }
 
     slice_shape_t ret;
     for (int dir = 0; dir < 3; dir ++) {
@@ -173,21 +179,32 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         auto &ref = dir == 0 ? ret.x : dir == 1 ? ret.y : ret.z;
         auto out = from_device(casted);
         ref.resize(vec.size());
-        int loop_num = 0;
+        int open_num = 0, close_num = 0, fixed_num = 0;
         for (int i = 0; i < vec.size(); i ++) {
             poly_builder_t builder;
             for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
                 builder.add(out[b], out[b + 1]);
             }
             for (auto &item : builder.get()) {
-                auto s = faceIdToMeshId[item.s % verts.len];
+                auto s = face_to_mesh[item.s % verts.len];
+                for (auto &pt : item.p) {
+                    pt = round_by(pt, opts.tol);
+                }
+                auto dist = length(item.p.back() - item.p.front());
+                if (!dist) {
+                    close_num ++;
+                } else if (dist < opts.gap) {
+                    item.p.push_back(item.p.front());
+                    fixed_num ++;
+                } else {
+                    open_num ++;
+                }
                 ref[i][s].push_back(item.p);
-                loop_num ++;
             }
         }
         if (opts.verbose) {
-            printf("PERF: got %d polygons for %zu verts and %zu faces at dir %s in %f s\n",
-                loop_num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z", seconds_since(scan_start));
+            printf("PERF: got %d open, %d closed and %d fixed for %zu verts and %zu faces at dir %s in %f s\n",
+                open_num, close_num, fixed_num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z", seconds_since(scan_start));
         }
     }
     return ret;

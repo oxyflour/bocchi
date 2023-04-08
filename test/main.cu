@@ -6,26 +6,27 @@
 
 using namespace bocchi;
 
+// https://github.com/alecjacobson/common-3d-test-models/raw/master/data/armadillo.obj
 auto armadillo_mesh = mesh_t::load_obj("build\\armadillo.obj");
-vector<mesh_t> TEST_SLICE_SHAPES {
-    armadillo_mesh,
-};
+vector<mesh_t> TEST_SLICE_SHAPES;
 
 auto test_slice() {
     grid_t grid {
         range(-100., 100., 200. / 500.),
-        range(-100., 100., 200. / 500.),
-        range(-100., 100., 200. / 500.),
+        range(-100., 110., 200. / 500.),
+        range(-100., 120., 200. / 500.),
     };
-    auto sliced = slice(TEST_SLICE_SHAPES, grid, { 1e-6, true });
+    auto slice_start = clock_now();
+    auto sliced = slice(TEST_SLICE_SHAPES, grid, { 1e-6, 1e-3, true });
+    printf("PERF: sliced in %f s\n", seconds_since(slice_start));
     device_vector
         xs(range(grid.xs.front(), grid.xs.back(), 200. / 5000.)),
         ys(range(grid.ys.front(), grid.ys.back(), 200. / 5000.)),
         zs(range(grid.zs.front(), grid.zs.back(), 200. / 5000.));
 
-    auto render_start = clock_now();
-    cast_options_t opts { 1e-6, true };
+    cast_options_t opts { 1e-6, false };
     for (int d = 0; d < 3; d ++) {
+        auto render_start = clock_now();
         auto &s = d == 0 ? sliced.x : d == 1 ? sliced.y : sliced.z;
         auto &u = d == 0 ? ys : d == 1 ? zs : xs,
              &v = d == 0 ? zs : d == 1 ? xs : ys;
@@ -41,7 +42,7 @@ auto test_slice() {
                 dump_png("build\\slice-" + string(a) + to_string(i) + ".png", casted, range, pixels, buf);
             }
         }
-        printf("PERF: render %zu x %zu in %f s\n", u.len, v.len, seconds_since(render_start));
+        printf("PERF: render dir %s (%zu x %zu) in %f s\n", a, u.len, v.len, seconds_since(render_start));
     }
 }
 
@@ -83,6 +84,9 @@ auto test_cast() {
 }
 
 int main() {
+    for (int i = 0; i < 1; i ++) {
+        TEST_SLICE_SHAPES.push_back(armadillo_mesh);
+    }
     test_slice();
     printf("ok\n");
     return 0;
