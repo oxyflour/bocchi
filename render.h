@@ -11,15 +11,15 @@ struct render_pixel_t {
 };
 
 struct render_range_t {
-    size_t i0, j0, i1, j1;
-    __host__ __device__ auto width() {
-        return i1 - i0;
+    size_t left, top, right, bottom;
+    __host__ __device__ __forceinline__ auto width() {
+        return right - left;
     }
-    __host__ __device__ auto height() {
-        return j1 - j0;
+    __host__ __device__ __forceinline__ auto height() {
+        return bottom - top;
     }
-    __host__ __device__ auto size() {
-        return (i1 - i0) * (j1 - j0);
+    __host__ __device__ __forceinline__ auto size() {
+        return width() * height();
     }
 };
 
@@ -28,8 +28,8 @@ __global__ void kernel_render(
     double *xs, size_t nx, double *ys, size_t ny,
     render_range_t range, render_pixel_t *out) {
     auto w = range.width();
-    for (int j = cuIdx(y) + range.j0; j < range.j1; j += cuDim(y)) {
-        for (int i = cuIdx(x) + range.i0; i < range.i1; i += cuDim(x)) {
+    for (int j = cuIdx(y) + range.top; j < range.bottom; j += cuDim(y)) {
+        for (int i = cuIdx(x) + range.left; i < range.right; i += cuDim(x)) {
             for (auto b = base[j], e = j + 1 < nx + ny ? base[j + 1] : (int) nj; b + 1 < e; b ++) {
                 auto &t0 = jnt[b], &t1 = jnt[b + 1];
                 if (t0.s == t1.s) {
@@ -91,11 +91,20 @@ auto dump_png(string file, vector<render_pixel_t> &vec, size_t width, size_t hei
     lodepng::encode(file, buf, width, height);
 }
 
+auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img, vector<render_pixel_t> &buf) {
+    render(casted, range, img.ptr);
+    from_device(img, buf);
+    dump_png(file, buf, range.width(), range.height());
+}
+
+auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img) {
+    vector<render_pixel_t> buf(img.len);
+    dump_png(file, casted, range, img, buf);
+}
+
 auto dump_png(string file, casted_t &casted, render_range_t &range) {
     device_vector<render_pixel_t> img(range.size());
-    render(casted, range, img.ptr);
-    auto buf = from_device(img);
-    dump_png(file, buf, range.width(), range.height());
+    dump_png(file, casted, range, img);
 }
 
 auto dump(string file, casted_t &casted) {

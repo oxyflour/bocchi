@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <algorithm>
 
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
@@ -62,6 +63,72 @@ struct casted_t {
     vector<double> xs, ys;
 };
 
+casted_t cast(vector<cast_input_t> &inputs,
+        device_vector<double> &xs, device_vector<double> &ys, cast_options_t &&opts) {
+    casted_t casted;
+    from_device(xs, casted.xs);
+    from_device(ys, casted.ys);
+    casted.len = vector<int>(ys.len + xs.len);
+    if (!inputs.size()) {
+        return casted;
+    }
+    auto cast_start = clock_now();
+
+    device_vector inp(inputs);
+    device_vector len(casted.len);
+    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, NULL);
+    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, NULL);
+
+    auto &vec = from_device(len, casted.len);
+    auto num = accumulate(vec.begin(), vec.end(), 0);
+    exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
+    to_device(vec, len);
+
+    device_vector<cast_output_t> out(num);
+    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, out.ptr);
+    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, out.ptr);
+    if (opts.verbose) {
+        printf("PERF: got %d joints for %zu segments at %zu x %zu grids in %f seconds\n", num, inp.len, xs.len, ys.len, seconds_since(cast_start));
+    }
+
+    auto sort_start = clock_now();
+    auto sort_joints = [] __host__ __device__ (cast_output_t a, cast_output_t b) { return a.s != b.s ? a.s < b.s : a.v < b.v; };
+#ifdef USE_THRUST_SORTING
+    for (int i = 0; i < vec.size(); i ++) {
+        auto begin = vec[i], end = i < vec.size() - 1 ? vec[i + 1] : num;
+        thrust::sort(thrust::device, out.ptr + begin, out.ptr + end, sort_joints);
+    }
+    if (opts.verbose) {
+        printf("PERF: thrust::sorted %d joints in %f seconds\n", num, seconds_since(sort_start));
+    }
+#endif
+    auto casted_ptr = from_device(out, casted.jnt).data();
+#ifndef USE_THRUST_SORTING
+    for (int i = 0; i < vec.size(); i ++) {
+        auto begin = vec[i], end = i < vec.size() - 1 ? vec[i + 1] : num;
+        std::sort(casted_ptr + begin, casted_ptr + end, sort_joints);
+    }
+    if (opts.verbose) {
+        printf("PERF: std::sorted %d joints in %f seconds\n", num, seconds_since(sort_start));
+    }
+#endif
+
+    return casted;
+}
+
+casted_t cast(std::map<int, shape_t> &shapes,
+        device_vector<double> &xs, device_vector<double> &ys, cast_options_t &&opts) {
+    vector<cast_input_t> inputs;
+    for (auto &[s, shape] : shapes) {
+        for (int p = 0; p < shape.size(); p ++) { auto &poly = shape[p];
+            for (int i = 0; i < poly.size(); i ++) { auto &pt = poly[i];
+                inputs.push_back({ s, p, pt.x, pt.y });
+            }
+        }
+    }
+    return cast(inputs, xs, ys, move(opts));
+}
+
 casted_t cast(vector<shape_t> &shapes,
         device_vector<double> &xs, device_vector<double> &ys, cast_options_t &&opts) {
     vector<cast_input_t> inputs;
@@ -72,36 +139,7 @@ casted_t cast(vector<shape_t> &shapes,
             }
         }
     }
-
-    device_vector inp(inputs);
-    device_vector len(vector<int>(ys.len + xs.len));
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, NULL);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, NULL);
-
-    auto vec = from_device(len);
-    auto num = accumulate(vec.begin(), vec.end(), 0);
-    exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
-    to_device(vec, len);
-    if (opts.verbose) {
-        printf("INFO: got %d joints for %zu segments at %zu x %zu grids\n", num, inp.len, xs.len, ys.len);
-    }
-
-    device_vector<cast_output_t> out(num);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, out.ptr);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, out.ptr);
-
-    auto sort_start = clock_now();
-    auto sort_joints = [] __host__ __device__ (cast_output_t a, cast_output_t b) { return a.s != b.s ? a.s < b.s : a.v < b.v; };
-    for (int i = 0; i < vec.size(); i ++) {
-        auto begin = vec[i],
-            end = i < vec.size() - 1 ? vec[i + 1] : num;
-        thrust::sort(thrust::device, out.ptr + begin, out.ptr + end, sort_joints);
-    }
-    if (opts.verbose) {
-        printf("PERF: sorted %d joints in %f seconds\n", num, seconds_since(sort_start));
-    }
-
-    return casted_t { from_device(out), vec, from_device(xs), from_device(ys) };
+    return cast(inputs, xs, ys, move(opts));
 }
 
 auto dump_svg(string file, casted_t &casted, map<int, string> colors = { }) {

@@ -23,7 +23,7 @@ struct slice_poly_t {
 };
 
 struct slice_shape_t {
-    vector<vector<shape_t>> x, y, z;
+    vector<std::map<int, shape_t>> x, y, z;
 };
 
 struct poly_builder_t {
@@ -146,6 +146,7 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
 
     slice_shape_t ret;
     for (int dir = 0; dir < 3; dir ++) {
+        auto scan_start = clock_now();
         device_vector pos(dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs);
         device_vector len(vector<int>(pos.len));
         kernel_slice CU_DIM(256, 64) (
@@ -157,31 +158,36 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
         auto num = accumulate(vec.begin(), vec.end(), 0);
         exclusive_scan(vec.begin(), vec.end(), vec.begin(), 0);
         to_device(vec, len);
-        if (opts.verbose) {
-            printf("INFO: got %d joints for %zu verts and %zu faces at dir %s\n",
-                num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z");
-        }
 
         device_vector<slice_out_t> casted(num);
         kernel_slice CU_DIM(256, 64) (
             verts.ptr, verts.len, faces.ptr, faces.len, pos.ptr, pos.len,
             dir, opts.tol, len.ptr, casted.ptr);
         CUDA_ASSERT(cudaGetLastError());
+        if (opts.verbose) {
+            printf("PERF: got %d joints for %zu verts and %zu faces at dir %s in %f s\n",
+                num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z", seconds_since(scan_start));
+        }
 
+        auto loop_start = clock_now();
         auto &ref = dir == 0 ? ret.x : dir == 1 ? ret.y : ret.z;
         auto out = from_device(casted);
+        ref.resize(vec.size());
+        int loop_num = 0;
         for (int i = 0; i < vec.size(); i ++) {
-            ref.push_back({ });
-            auto &shapes = ref.back();
-            shapes.resize(list.size());
             poly_builder_t builder;
             for (int b = vec[i], e = i < vec.size() - 1 ? vec[i + 1] : num; b < e; b += 2) {
                 builder.add(out[b], out[b + 1]);
             }
             for (auto &item : builder.get()) {
                 auto s = faceIdToMeshId[item.s % verts.len];
-                shapes[s].push_back(item.p);
+                ref[i][s].push_back(item.p);
+                loop_num ++;
             }
+        }
+        if (opts.verbose) {
+            printf("PERF: got %d polygons for %zu verts and %zu faces at dir %s in %f s\n",
+                loop_num, verts.len, faces.len, dir == 0 ? "x" : dir == 1 ? "y" : "z", seconds_since(scan_start));
         }
     }
     return ret;

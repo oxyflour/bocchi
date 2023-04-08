@@ -164,7 +164,7 @@ auto clock_now() {
     return high_resolution_clock::now();
 }
 auto seconds_since(steady_clock::time_point &start) {
-    std::chrono::duration<double> duration = std::chrono::duration_cast<std::chrono::seconds>(clock_now() - start);
+    std::chrono::duration<double> duration = clock_now() - start;
     return duration.count();
 }
 
@@ -283,9 +283,29 @@ struct mesh_t {
         }
         return mesh;
     }
-    static auto load(string file) {
+    static auto load_obj(string file) {
+        mesh_t mesh;
+        char type;
+        double3 p;
         ifstream fn(file);
-        load(fn);
+        while (fn >> type >> p.x >> p.y >> p.z) {
+            if (type == 'v') {
+                mesh.verts.push_back(p);
+            } else if (type == 'f') {
+                mesh.faces.push_back({ (int) p.x - 1, (int) p.y - 1, (int) p.z - 1 });
+            } else {
+                fprintf(stderr, "got bad type %c in file %s\n", type, file.c_str());
+            }
+        }
+        return mesh;
+    }
+    static auto load(string file) {
+        if (ends_width(file, ".obj")) {
+            return load_obj(file);
+        } else {
+            ifstream fn(file);
+            return load(fn);
+        }
     }
     static auto save(ofstream &fn, mesh_t &mesh) {
         fn << mesh.verts.size();
