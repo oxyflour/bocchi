@@ -2,9 +2,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <vector>
 #include <fstream>
+#include <string>
+#include <sstream>
 #include <chrono>
 
 #include <cuda_runtime.h>
@@ -26,6 +29,9 @@ __device__ __host__ inline auto operator*(double3 a, double b) {
 __device__ __host__ inline auto operator+(double3 a, double3 b) {
     return double3 { a.x + b.x, a.y + b.y, a.z + b.z };
 }
+__device__ __host__ inline auto operator-(double3 a, double3 b) {
+    return double3 { a.x - b.x, a.y - b.y, a.z - b.z };
+}
 __device__ __host__ inline auto operator/(double2 a, double b) {
     return double2 { a.x / b, a.y / b };
 }
@@ -38,16 +44,30 @@ __device__ __host__ inline auto operator-(double2 a, double2 b) {
 __device__ __host__ inline auto length(double2 a) {
     return sqrt(a.x * a.x + a.y * a.y);
 }
+__device__ __host__ inline auto operator-(int3 a, int b) {
+    return int3 { a.x - b, a.y - b, a.z - b };
+}
 
-__device__ __host__ inline auto floor(double3 v) {
+__device__ __host__ inline auto floor_double(double3 v) {
     return double3 { ::floor(v.x), ::floor(v.y), ::floor(v.z) };
 }
-__device__ __host__ inline auto floor(double2 v) {
+__device__ __host__ inline auto floor_double(double2 v) {
     return double2 { ::floor(v.x), ::floor(v.y) };
+}
+__device__ __host__ inline auto floor_double(double v) {
+    return ::floor(v);
 }
 template <typename T>
 __device__ __host__ inline auto round_by(T val, double tol) {
-    return floor(val / tol) * tol;
+    return floor_double(val / tol) * tol;
+}
+template <typename T>
+__host__ inline auto round_vector_by(std::vector<T> &&arr, double tol) {
+    std::vector<T> ret;
+    for (auto val : arr) {
+        ret.push_back(round_by(val, tol));
+    }
+    return ret;
 }
 
 __device__ __host__ inline auto fmin(double3 a, double3 b) {
@@ -300,16 +320,25 @@ struct mesh_t {
     }
     static auto load_obj(string file) {
         mesh_t mesh;
-        char type;
-        double3 p;
         ifstream fn(file);
-        while (fn >> type >> p.x >> p.y >> p.z) {
-            if (type == 'v') {
+        string line;
+        string head;
+        while (getline(fn, line)) {
+            std::stringstream s(line);
+            if (line.size() < 2) {
+                // pass
+            } else if (line[0] == 'v' && line[1] == ' ') {
+                double3 p;
+                s >> head >> p.x >> p.y >> p.z;
                 mesh.verts.push_back(p);
-            } else if (type == 'f') {
-                mesh.faces.push_back({ (int) p.x - 1, (int) p.y - 1, (int) p.z - 1 });
+            } else if (line[0] == 'f' && line[1] == ' ') {
+                int3 f;
+                s >> head >> f.x >> f.y >> f.z;
+                mesh.faces.push_back(f - 1);
+            } else if (line[0] == '#') {
+                // comments
             } else {
-                fprintf(stderr, "got bad type %c in file %s\n", type, file.c_str());
+                fprintf(stderr, "skip bad line %s in file %s\n", line.c_str(), file.c_str());
             }
         }
         return mesh;

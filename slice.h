@@ -153,7 +153,8 @@ auto slice(vector<mesh_t> &list, grid_t &grid, slice_options_t &&opts) {
     slice_shape_t ret;
     for (int dir = 0; dir < 3; dir ++) {
         auto scan_start = clock_now();
-        device_vector pos(dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs);
+        auto &arr = dir == 0 ? grid.xs : dir == 1 ? grid.ys : grid.zs;
+        device_vector pos(round_vector_by(move(arr), opts.tol));
         device_vector len(vector<int>(pos.len));
         kernel_slice CU_DIM(256, 64) (
             verts.ptr, verts.len, faces.ptr, faces.len, pos.ptr, pos.len,

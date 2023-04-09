@@ -91,15 +91,15 @@ auto dump_png(string file, vector<render_pixel_t> &vec, size_t width, size_t hei
     lodepng::encode(file, buf, width, height);
 }
 
-auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img, vector<render_pixel_t> &buf) {
+auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img, vector<render_pixel_t> &buf, map<int, int3> colors = { }) {
     render(casted, range, img.ptr);
     from_device(img, buf);
-    dump_png(file, buf, range.width(), range.height());
+    dump_png(file, buf, range.width(), range.height(), colors);
 }
 
-auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img) {
+auto dump_png(string file, casted_t &casted, render_range_t &range, device_vector<render_pixel_t> &img, map<int, int3> colors = { }) {
     vector<render_pixel_t> buf(img.len);
-    dump_png(file, casted, range, img, buf);
+    dump_png(file, casted, range, img, buf, colors);
 }
 
 auto dump_png(string file, casted_t &casted, render_range_t &range) {

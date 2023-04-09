@@ -76,8 +76,8 @@ casted_t cast(vector<cast_input_t> &inputs,
 
     device_vector inp(inputs);
     device_vector len(casted.len);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, NULL);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, NULL);
+    kernel_cast CU_DIM(128, 32) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, NULL);
+    kernel_cast CU_DIM(128, 32) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, NULL);
 
     auto &vec = from_device(len, casted.len);
     auto num = accumulate(vec.begin(), vec.end(), 0);
@@ -85,8 +85,8 @@ casted_t cast(vector<cast_input_t> &inputs,
     to_device(vec, len);
 
     device_vector<cast_output_t> out(num);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, out.ptr);
-    kernel_cast CU_DIM(512, 256) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, out.ptr);
+    kernel_cast CU_DIM(128, 32) (inp.ptr, inp.len, ys.ptr, ys.len, 0, opts.tol, len.ptr, out.ptr);
+    kernel_cast CU_DIM(128, 32) (inp.ptr, inp.len, xs.ptr, xs.len, 1, opts.tol, len.ptr + ys.len, out.ptr);
     if (opts.verbose) {
         printf("PERF: got %d joints for %zu segments at %zu x %zu grids in %f seconds\n", num, inp.len, xs.len, ys.len, seconds_since(cast_start));
     }
