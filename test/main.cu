@@ -6,41 +6,70 @@
 
 using namespace bocchi;
 
-auto test_slice(vector<mesh_t> &shapes, double tol = 1e-6) {
-    double3 p0 = {  INFINITY,  INFINITY,  INFINITY },
-            p1 = { -INFINITY, -INFINITY, -INFINITY };
+struct bound_t {
+    double3 min = {  INFINITY,  INFINITY,  INFINITY },
+            max = { -INFINITY, -INFINITY, -INFINITY };
+    auto extend(double3 vert) {
+        min = fmin(min, vert);
+        max = fmax(max, vert);
+    }
+};
+
+auto get_bound(vector<mesh_t> &shapes, double padding = 0.1) {
+    bound_t b;
     for (auto &shape : shapes) {
         for (auto &vert : shape.verts) {
-            p0 = fmin(p0, vert);
-            p1 = fmax(p1, vert);
+            b.extend(vert);
         }
     }
-    auto d = p1 - p0;
-    p0 = p0 - d * 0.1;
-    p1 = p1 + d * 0.1;
-    auto res = fmin(fmin(d.x, d.y), d.z) / 100.;
-    printf("shape bound (%f %f %f) ~ (%f %f %f)\n", p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+    auto d = b.max - b.min;
+    b.min = b.min - d * 0.1;
+    b.max = b.max + d * 0.1;
+    printf("shape bound (%f %f %f) ~ (%f %f %f)\n", b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z);
+    return b;
+}
 
+auto get_grid(vector<mesh_t> &shapes) {
+    auto b = get_bound(shapes);
+    auto p0 = b.min, p1 = b.max, d = p1 - p0;
+    auto res = fmin(fmin(d.x, d.y), d.z) / 100.;
+    return grid_t {
+        range(p0.x, p1.x, res),
+        range(p0.y, p1.y, res),
+        range(p0.z, p1.z, res),
+    };
+}
+
+auto refine_array(vector<double> &arr, int refine, double ext, double tol) {
+    vector<double> out;
+    for (int i = 0; i < arr.size() - 1; i ++) {
+        double b = arr[i] + ext,
+            s = (arr[i + 1] - arr[i] - ext * 2) / (refine - 1);
+        for (int j = 0; j < refine; j ++, b += s) {
+            out.push_back(round_by(b, tol));
+        }
+    }
+    return out;
+}
+
+auto test_slice(vector<mesh_t> &shapes, grid_t &g, double ext = 1e-4, double tol = 1e-6) {
     grid_t grid {
-        round_vector_by(range(p0.x, p1.x, res), tol),
-        round_vector_by(range(p0.y, p1.y, res), tol),
-        round_vector_by(range(p0.z, p1.z, res), tol),
+        round_vector_by(g.xs, tol),
+        round_vector_by(g.ys, tol),
+        round_vector_by(g.zs, tol),
     };
     auto slice_start = clock_now();
     auto sliced = slice(shapes, grid, { tol, 1e-3, true });
     printf("PERF: sliced in %f s\n", seconds_since(slice_start));
-    device_vector
-        xs(round_vector_by(range(p0.x, p1.x, res / 16), tol)),
-        ys(round_vector_by(range(p0.y, p1.y, res / 16), tol)),
-        zs(round_vector_by(range(p0.z, p1.z, res / 16), tol));
 
     cast_options_t opts { tol, false };
-    for (int d = 0; d < 3; d ++) {
+    for (int dir = 0; dir < 3; dir ++) {
         auto render_start = clock_now();
-        auto &s = d == 0 ? sliced.x : d == 1 ? sliced.y : sliced.z;
-        auto &u = d == 0 ? zs : d == 1 ? xs : ys,
-             &v = d == 0 ? ys : d == 1 ? zs : xs;
-        auto  a = d == 0 ? "x" : d == 1 ? "y" : "z";
+        auto &s = dir == 0 ? sliced.x : dir == 1 ? sliced.y : sliced.z;
+        auto  a = dir == 0 ? "x" : dir == 1 ? "y" : "z";
+        device_vector
+            u(refine_array(dir == 0 ? g.zs : dir == 1 ? g.xs : g.ys, 16, ext, tol)),
+            v(refine_array(dir == 0 ? g.ys : dir == 1 ? g.zs : g.xs, 16, ext, tol));
         render_range_t range { 0, 0, u.len, v.len };
         device_vector<render_pixel_t> pixels(range.size());
         vector<render_pixel_t> buf(range.size());
@@ -67,7 +96,8 @@ int main() {
         //shapes.push_back(armadillo);
         shapes.push_back(bimba);
     }
-    test_slice(shapes);
+    auto grid = get_grid(shapes);
+    test_slice(shapes, grid);
     printf("ok\n");
     return 0;
 }

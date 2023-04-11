@@ -62,7 +62,7 @@ __device__ __host__ inline auto round_by(T val, double tol) {
     return floor_double(val / tol) * tol;
 }
 template <typename T>
-__host__ inline auto round_vector_by(std::vector<T> &&arr, double tol) {
+__host__ inline auto round_vector_by(std::vector<T> arr, double tol) {
     std::vector<T> ret;
     for (auto val : arr) {
         ret.push_back(round_by(val, tol));
