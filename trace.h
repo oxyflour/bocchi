@@ -79,21 +79,33 @@ struct trace_t {
         }
     }
 
-    auto create_program(OptixProgramGroupKind kind, string entry) {
+    auto create_program(OptixProgramGroupKind kind, vector<string> &&entries) {
         OptixProgramGroupOptions opts = { };
         OptixProgramGroupDesc desc = { };
         desc.kind = kind;
         if (kind == OPTIX_PROGRAM_GROUP_KIND_RAYGEN) {
-            desc.raygen.module = mod;
-            desc.raygen.entryFunctionName = entry.c_str();
+            if (entries.size()) {
+                desc.raygen.module = mod;
+                desc.raygen.entryFunctionName = entries[0].c_str();
+            }
         } else if (kind == OPTIX_PROGRAM_GROUP_KIND_MISS) {
-            desc.miss.module = mod;
-            desc.miss.entryFunctionName = entry.c_str();
+            if (entries.size()) {
+                desc.miss.module = mod;
+                desc.miss.entryFunctionName = entries[0].c_str();
+            }
         } else if (kind == OPTIX_PROGRAM_GROUP_KIND_HITGROUP) {
-            int idx = entry.find_first_of('/');
-            auto &hg = desc.hitgroup;
-            hg.moduleCH = mod;
-            hg.entryFunctionNameCH = idx > 0 ? entry.substr(0, idx).c_str() : entry.c_str();
+            if (entries.size()) {
+                desc.hitgroup.moduleCH = mod;
+                desc.hitgroup.entryFunctionNameCH = entries[0].c_str();
+            }
+            if (entries.size() > 1) {
+                desc.hitgroup.moduleAH = mod;
+                desc.hitgroup.entryFunctionNameAH = entries[1].c_str();
+            }
+            if (entries.size() > 2) {
+                desc.hitgroup.moduleIS = mod;
+                desc.hitgroup.entryFunctionNameIS = entries[2].c_str();
+            }
         }
         OptixProgramGroup group;
         log_size = sizeof(log_buf);
@@ -152,6 +164,13 @@ struct trace_t {
         CUDA_ASSERT(cudaDeviceSynchronize());
         return handle;
     }
+    template <class T>
+    auto update_record(device_vector<SbtRecord<T>> &vec, OptixProgramGroup &pg, T &&data = { }) {
+        SbtRecord<T> rec;
+        rec.data = data;
+        OPTIX_ASSERT(optixSbtRecordPackHeader(pg, &rec));
+        return (CUdeviceptr) to_device(&rec, 1, vec.ptr);
+    }
     trace_t(mesh_t &mesh) : dev_params(1), dev_buffer(1), dev_accel(1),
             dev_raygen(1), dev_miss(1), dev_hitgroup(1) {
         CUDA_ASSERT(cudaFree(NULL));
@@ -181,9 +200,9 @@ struct trace_t {
         OPTIX_ASSERT(optixModuleCreateFromPTX(ctx, &modCompileOpts, &pipCompileOpts, ptx.data(), ptx.size(), log_buf, &log_size, &mod));
         check_log("MODULE");
 
-        auto raygenPg  = create_program(OPTIX_PROGRAM_GROUP_KIND_RAYGEN,   "__raygen__rg"),
-            missPg     = create_program(OPTIX_PROGRAM_GROUP_KIND_MISS,     "__miss__ms"),
-            hitgroupPg = create_program(OPTIX_PROGRAM_GROUP_KIND_HITGROUP, "__closesthit__ch");
+        auto raygenPg  = create_program(OPTIX_PROGRAM_GROUP_KIND_RAYGEN,   { "__raygen__rg" }),
+            missPg     = create_program(OPTIX_PROGRAM_GROUP_KIND_MISS,     { "__miss__ms" }),
+            hitgroupPg = create_program(OPTIX_PROGRAM_GROUP_KIND_HITGROUP, { "__closesthit__ch" });
 
         OptixPipelineLinkOptions pipLinkOpts = { };
         pipLinkOpts.maxTraceDepth = 2;
@@ -203,27 +222,11 @@ struct trace_t {
             &sizeFromTraversal, &sizeFromState, &sizeForContinuation));
         OPTIX_ASSERT(optixPipelineSetStackSize(pipeline, sizeFromTraversal, sizeFromState, sizeForContinuation, 1));;
 
-        {
-            vector<RayGenSbtRecord> rec(1);
-            OPTIX_ASSERT(optixSbtRecordPackHeader(raygenPg, rec.data()));
-            to_device(rec, dev_raygen);
-        }
-        {
-            vector<MissSbtRecord> rec(1);
-            rec[0].data = { .3, .1, .2 };
-            OPTIX_ASSERT(optixSbtRecordPackHeader(missPg, rec.data()));
-            to_device(rec, dev_miss);
-        }
-        {
-            vector<HitGroupSbtRecord> rec(1);
-            OPTIX_ASSERT(optixSbtRecordPackHeader(hitgroupPg, rec.data()));
-            to_device(rec, dev_hitgroup);
-        }
-        sbt.raygenRecord        = (CUdeviceptr) dev_raygen.ptr;
-        sbt.missRecordBase      = (CUdeviceptr) dev_miss.ptr;
+        sbt.raygenRecord        = update_record(dev_raygen,   raygenPg);
+        sbt.missRecordBase      = update_record(dev_miss,     missPg, { .0, .0, .5 });
         sbt.missRecordStrideInBytes = sizeof(MissSbtRecord);
         sbt.missRecordCount     = 1;
-        sbt.hitgroupRecordBase  = (CUdeviceptr) dev_hitgroup.ptr;
+        sbt.hitgroupRecordBase  = update_record(dev_hitgroup, hitgroupPg);
         sbt.hitgroupRecordStrideInBytes = sizeof(HitGroupSbtRecord);
         sbt.hitgroupRecordCount = 1;
 
