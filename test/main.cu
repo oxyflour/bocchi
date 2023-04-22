@@ -3,6 +3,7 @@
 #include "slice.h"
 #include "cast.h"
 #include "render.h"
+#include "trace.h"
 
 using namespace bocchi;
 
@@ -88,16 +89,20 @@ auto test_slice(vector<mesh_t> &shapes, grid_t &g, double ext = 1e-4, double tol
 }
 
 int main() {
+    /*
     vector<mesh_t> shapes;
     // https://github.com/alecjacobson/common-3d-test-models/raw/master/data/armadillo.obj
     auto armadillo = mesh_t::load_obj("build\\armadillo.obj");
-    auto bimba = mesh_t::load_obj("build\\bimba.obj");
     for (int i = 0; i < 1; i ++) {
         //shapes.push_back(armadillo);
         shapes.push_back(bimba);
     }
     auto grid = get_grid(shapes);
     test_slice(shapes, grid);
+     */
+    auto bimba = mesh_t::load_obj("build\\bimba.obj");
+    trace_t tracer(bimba);
+    tracer.render();
     printf("ok\n");
     return 0;
 }

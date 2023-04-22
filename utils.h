@@ -11,9 +11,13 @@
 #include <chrono>
 
 #include <cuda_runtime.h>
+
+#ifdef USE_OPTIX
+#include <nvrtc.h>
 #include <optix.h>
 #include <optix_stubs.h>
 #include <optix_function_table_definition.h>
+#endif
 
 namespace bocchi {
 
@@ -110,13 +114,14 @@ extern size_t atomicAdd(size_t *, size_t);
 #define CALL_AND_ASSERT(call, success, message) do { \
     auto code = call;       \
     if (code != success) { \
-        fprintf(stderr, "call %s failed with message %s\n at %s:%d\n", #call, message(code), __FILE__, __LINE__); \
+        fprintf(stderr, "call %s failed with message \"%s\" at %s:%d\n", #call, message(code), __FILE__, __LINE__); \
         exit(-1);           \
     }                       \
 } while (0)
 
 #define  CUDA_ASSERT(call) CALL_AND_ASSERT(call, cudaSuccess, cudaGetErrorString)
 #define OPTIX_ASSERT(call) CALL_AND_ASSERT(call, OPTIX_SUCCESS, optixGetErrorString)
+#define NVRTC_ASSERT(call) CALL_AND_ASSERT(call, NVRTC_SUCCESS, nvrtcGetErrorString)
 
 auto _cuda_assert(cudaError_t err, const char* file, int line) {
     if (err != cudaSuccess) {
@@ -212,6 +217,10 @@ template <typename T>
 struct device_vector {
     T *ptr = NULL;
     size_t len = 0;
+    device_vector(T *ptr, size_t len) {
+        resize(len);
+        _to_device(ptr, len, this->ptr, __FILE__, __LINE__);
+    }
     device_vector(vector<T> &vec) {
         resize(vec.size());
         _to_device(vec.data(), vec.size(), ptr, __FILE__, __LINE__);
