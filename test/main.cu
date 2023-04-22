@@ -102,7 +102,7 @@ int main() {
      */
     auto bimba = mesh_t::load_obj("build\\bimba.obj");
     trace_t tracer(bimba);
-    tracer.render();
+    tracer.render("build/trace.png");
     printf("ok\n");
     return 0;
 }

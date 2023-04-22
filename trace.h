@@ -66,6 +66,7 @@ struct trace_t {
     device_vector<char> dev_accel;
     Params params;
     CUstream stream;
+    Camera camera;
 
     static void log_cb(unsigned int level, const char *tag, const char *message, void *) {
         printf("[%d][%s] %s\n", level, tag, message);
@@ -89,10 +90,10 @@ struct trace_t {
             desc.miss.module = mod;
             desc.miss.entryFunctionName = entry.c_str();
         } else if (kind == OPTIX_PROGRAM_GROUP_KIND_HITGROUP) {
-            auto idx = entry.find_first_of('/');
+            int idx = entry.find_first_of('/');
             auto &hg = desc.hitgroup;
             hg.moduleCH = mod;
-            hg.entryFunctionNameCH = entry.substr(0, idx).c_str();
+            hg.entryFunctionNameCH = idx > 0 ? entry.substr(0, idx).c_str() : entry.c_str();
         }
         OptixProgramGroup group;
         log_size = sizeof(log_buf);
@@ -171,7 +172,7 @@ struct trace_t {
         pipCompileOpts.traversableGraphFlags            = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
         pipCompileOpts.numPayloadValues                 = 3;
         pipCompileOpts.numAttributeValues               = 3;
-        pipCompileOpts.exceptionFlags                   = OPTIX_EXCEPTION_FLAG_NONE;
+        pipCompileOpts.exceptionFlags                   = OPTIX_EXCEPTION_FLAG_DEBUG | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH | OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
         pipCompileOpts.pipelineLaunchParamsVariableName = "params";
         pipCompileOpts.usesPrimitiveTypeFlags           = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
 
@@ -226,19 +227,24 @@ struct trace_t {
         sbt.hitgroupRecordStrideInBytes = sizeof(HitGroupSbtRecord);
         sbt.hitgroupRecordCount = 1;
 
-        dev_buffer.resize(params.image_width * params.image_height);
         CUDA_ASSERT(cudaStreamCreate(&stream));
-        params.image = dev_buffer.ptr;
+
         params.image_width  = 1024;
         params.image_height = 768;
+        dev_buffer.resize(params.image_width * params.image_height);
+        params.image = dev_buffer.ptr;
         params.handle = build_accel(mesh);
+        camera.setup(params);
         to_device(&params, 1, dev_params.ptr);
     }
-    auto render() {
+    auto render(string file) {
         OPTIX_ASSERT(optixLaunch(pipeline, stream,
             (CUdeviceptr) dev_params.ptr, sizeof(Params), &sbt,
             params.image_width, params.image_height, 1));
         CUDA_ASSERT(cudaDeviceSynchronize());
+        auto pixels = from_device(dev_buffer);
+        lodepng::encode(file, (unsigned char *) pixels.data(),
+            params.image_width, params.image_height);
     }
     ~trace_t() {
         OPTIX_ASSERT(optixDeviceContextDestroy(ctx));
