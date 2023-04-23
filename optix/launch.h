@@ -75,10 +75,10 @@ struct Camera {
     float3 eye, lookat, up;
     float fov, aspect;
     __host__ __device__ void init(int width, int height) {
-        eye = { 0, 0, 2 };
+        eye = { 0, 0, 1 };
         lookat = { 0, 0, 0 };
-        up = { 0, 1, 3 };
-        fov = 45;
+        up = { 0, 1, 0 };
+        fov = 15;
         aspect = 1. * width / height;
     }
     __host__ __device__ void setup(Params &params) {

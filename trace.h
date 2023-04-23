@@ -137,12 +137,13 @@ struct trace_t {
         arr.vertexStrideInBytes = sizeof(float3);
         arr.numVertices   = verts.len;
         arr.vertexBuffers = (CUdeviceptr *) &verts.ptr;
+        arr.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+        arr.indexStrideInBytes = sizeof(uint32_t) * 3;
+        arr.numIndexTriplets = faces.len / 3;
+        arr.indexBuffer = (CUdeviceptr) faces.ptr;
         uint32_t flags[1] = { OPTIX_GEOMETRY_FLAG_NONE };
         arr.flags         = flags;
         arr.numSbtRecords = sizeof(flags) / sizeof(uint32_t);
-        arr.sbtIndexOffsetBuffer        = (CUdeviceptr) faces.ptr;
-        arr.sbtIndexOffsetSizeInBytes   = sizeof(uint32_t);
-        arr.sbtIndexOffsetStrideInBytes = sizeof(uint32_t);
 
         OptixAccelBufferSizes size;
         OPTIX_ASSERT(optixAccelComputeMemoryUsage(ctx, &opts, &input, 1, &size));
